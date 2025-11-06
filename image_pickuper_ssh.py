@@ -254,3 +254,98 @@ def main():
 
 if __name__ == "__main__":
     main()
+import re # 新たにインポート
+
+# ... (他のインポートは省略)
+
+class SSHRemoteManager:
+    """SSHコマンド実行ベースのファイル操作ラッパークラス"""
+    # ... (listdir関数以外は省略)
+
+    def listdir(self, path):
+        # ls -F でディレクトリには / をつける
+        output = run_remote_command(f"ls -F '{path}'")
+        if not output:
+            return []
+        # ディレクトリ名末尾のスラッシュを削除して返すように修正
+        return [f.rstrip('/') for f in output.split('\n')]
+    
+    # ... (isdir, exists, join, makedirs, copy_file, rename は省略)
+
+# ... (get_shop_type関数は省略)
+
+def parse_filename(filename):
+    """ファイル名から店舗コード、レーン番号を抽出する"""
+    # 複雑なファイル名解析はローカルで実行
+    parts = filename.split('_')
+    if len(parts) >= 3:
+        # [1.00]1304_011-01_2024-09-02...
+        # 最初の部分を取得 e.g., "[1.00]1304" or "1304"
+        first_part = parts[0] # インデックス0を指定するよう修正
+        if ']' in first_part:
+             shop_code_raw = first_part.split(']')[-1]
+        else:
+             shop_code_raw = first_part
+             
+        # shop_codeから不要な文字を削除し数値部分のみ抽出
+        shop_code = ''.join(filter(str.isdigit, shop_code_raw))
+
+        # レーン番号部分 e.g., "011-01"
+        lane_part = parts[1] # インデックス1を指定するよう修正
+        lane_code = lane_part.split('-')[-1] # e.g., "01"
+
+        return shop_code, lane_code
+    return None, None
+
+
+def main():
+    # ... (SSH接続処理は省略)
+
+    try:
+        # ... (2. 保存先フォルダのリネーム処理は省略)
+            
+        # ... (3. Excel/JSONの読み込み、4. Excelデータの処理は省略)
+
+        # 5 & 6. 画像のピックアップとコピー
+        SHOP_TYPES = ['新型', '旧型']
+        summary_data = defaultdict(lambda: defaultdict(int)) 
+
+        # --- 追加箇所: リモートのソースディレクトリ直下の全フォルダ名を一度だけ取得 ---
+        print(f"Listing all source folders in {SOURCE_BASE_PATH}...")
+        all_source_folders = fm.listdir(SOURCE_BASE_PATH)
+        print(f"Found {len(all_source_folders)} folders.")
+
+        for shop_type in SHOP_TYPES:
+            print(f"--- Processing {shop_type} shops ---")
+            # ... (type_dest_pathの設定とmakedirsは省略)
+
+            for class_name, prod_codes in class_map.items():
+                print(f"  Processing class: {class_name}")
+                # ... (class_dest_pathの設定とmakedirsは省略)
+
+                available_images = []
+                for prod_code in prod_codes:
+                    # --- 修正箇所: prod_codeを含むフォルダを検索 ---
+                    for folder_name in all_source_folders:
+                        # 正規表現を使って、フォルダ名が 'prod_code_XXXX' または 'index_prod_code_XXXX' のパターンに一致するか確認
+                        # prod_codeがフォルダ名の一部として含まれていればOKとする
+                        if re.search(f"(^|_){re.escape(prod_code)}(_|$)", folder_name):
+                            source_folder_path = fm.join(SOURCE_BASE_PATH, folder_name)
+                            
+                            # リモートでlsコマンドを実行し、ファイル名リストを取得
+                            filenames = run_remote_command(f"ls '{source_folder_path}'").split('\n')
+                            for filename in filenames:
+                                if filename and (filename.lower().endswith(('.png', '.raw'))):
+                                    shop_code, lane_code = parse_filename(filename)
+                                    if shop_code and get_shop_type(shop_code, shop_info) == shop_type:
+                                        available_images.append({
+                                            'path': fm.join(source_folder_path, filename),
+                                            'shop_code': shop_code,
+                                            'lane_code': lane_code,
+                                            'filename': filename
+                                        })
+                    
+                # ... (ピックアップロジック (144枚) とファイルコピーロジックは省略)
+                # ... (7. エクセルに出力（CSVファイルとして出力）ロジックは省略)
+
+    # ... (エラーハンドリングとfinallyブロックは省略)
